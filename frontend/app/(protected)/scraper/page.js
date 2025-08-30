@@ -34,18 +34,16 @@ export default function ScraperPage() {
   // Poll for status updates when scraping is running
   useEffect(() => {
     let interval;
-    
     if (isRunning) {
       interval = setInterval(getStatus, 2000);
     }
-    
     return () => clearInterval(interval);
-  }, [isRunning]);
+  }, [isRunning, getStatus]); // <-- Add getStatus here
 
   // Initial status check when component mounts
   useEffect(() => {
     getStatus();
-  }, []);
+  }, [getStatus]); // <-- Add getStatus here
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;

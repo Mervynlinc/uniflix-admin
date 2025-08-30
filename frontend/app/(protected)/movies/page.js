@@ -16,6 +16,10 @@ export default function ImportAndEnrichMovies() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [enrichProgress, setEnrichProgress] = useState(0);
   const [statusMessage, setStatusMessage] = useState('');
+
+  // ...existing imports...
+const BACKEND_API_URL = process.env.NEXT_PUBLIC_ADMIN_API;
+// ...rest of code...
   
   // WebSocket connection for real-time progress updates
   useEffect(() => {
@@ -24,7 +28,7 @@ export default function ImportAndEnrichMovies() {
     // Only connect when actively processing
     if (uploading || enriching) {
       // Connect to WebSocket server
-      socket = new WebSocket('ws://localhost:4000/progress');
+      socket = new WebSocket(`${BACKEND_API_URL}/progress`);
       
       socket.onopen = () => {
         console.log('WebSocket connected');
@@ -123,7 +127,7 @@ export default function ImportAndEnrichMovies() {
       };
       
       // Open and send the request
-      xhr.open('POST', 'http://localhost:4000/movies/import');
+      xhr.open('POST', `${BACKEND_API_URL}/movies/import`);
       xhr.setRequestHeader('Authorization', `Bearer ${token}`);
       xhr.send(formData);
       
@@ -146,7 +150,7 @@ export default function ImportAndEnrichMovies() {
       console.log('Movie IDs to enrich:', uploadResult.addedMovies.map(m => m.movie_id));
       
       const token = localStorage.getItem('adminToken');
-      const response = await fetch('http://localhost:4000/movies/enrich', {
+      const response = await fetch(`${BACKEND_API_URL}/movies/enrich`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -33,6 +33,8 @@ export default function Dashboard() {
   const [topMovies, setTopMovies] = useState([]);
   const [recentActivity, setRecentActivity] = useState([]);
   const [categoryDistribution, setCategoryDistribution] = useState([]);
+
+  const BACKEND_API_URL = process.env.NEXT_PUBLIC_ADMIN_API;
   
   // Fetch dashboard data from the API
   useEffect(() => {
@@ -52,13 +54,13 @@ export default function Dashboard() {
         };
         
         // Fetch main dashboard stats
-        const statsResponse = await fetch('http://localhost:4000/dashboard/stats', { headers });
+        const statsResponse = await fetch(`${BACKEND_API_URL}/dashboard/stats`, { headers });
         if (!statsResponse.ok) throw new Error('Failed to fetch dashboard stats');
         const statsData = await statsResponse.json();
         setStats(statsData);
         
         // Fetch top movies
-        const topMoviesResponse = await fetch('http://localhost:4000/dashboard/top-movies', { headers });
+        const topMoviesResponse = await fetch(`${BACKEND_API_URL}/dashboard/top-movies`, { headers });
         if (!topMoviesResponse.ok) throw new Error('Failed to fetch top movies');
         const topMoviesData = await topMoviesResponse.json();
         setTopMovies(topMoviesData.map(movie => ({
@@ -69,7 +71,7 @@ export default function Dashboard() {
         })));
         
         // Fetch category distribution
-        const categoryResponse = await fetch('http://localhost:4000/dashboard/category-distribution', { headers });
+        const categoryResponse = await fetch(`${BACKEND_API_URL}/dashboard/category-distribution`, { headers });
         if (!categoryResponse.ok) throw new Error('Failed to fetch category distribution');
         const categoryData = await categoryResponse.json();
         setCategoryDistribution(categoryData);

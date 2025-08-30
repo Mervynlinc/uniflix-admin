@@ -12,7 +12,7 @@ import {
   Link
 } from 'lucide-react';
 
-const BACKEND_API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000';
+const BACKEND_API_URL = process.env.NEXT_PUBLIC_ADMIN_API;
 
 export default function ScraperPage() {
   const [isRunning, setIsRunning] = useState(false);
@@ -28,9 +28,43 @@ export default function ScraperPage() {
   });
   const [connectionError, setConnectionError] = useState(false);
 
-  // Use relative URLs when in the same domain
-  // No need for API_BASE_URL with Next.js API routes
-  
+  // --- Move getStatus above useEffect hooks ---
+  const getAuthHeader = () => {
+    const token = localStorage.getItem('adminToken');
+    return {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    };
+  };
+
+  const getStatus = async () => {
+    try {
+      setConnectionError(false);
+      const response = await fetch(`${BACKEND_API_URL}/api/scraper/status`, {
+        headers: getAuthHeader()
+      });
+      
+      if (!response.ok) {
+        throw new Error('API not responding');
+      }
+      
+      const data = await response.json();
+      
+      setIsRunning(data.isRunning);
+      setProgress(data.progress);
+      setCurrentCategory(data.currentCategory);
+      setCurrentMovie(data.currentMovie);
+      setMovies(data.movies);
+      setErrors(data.errors);
+      setTotalMovies(data.totalMovies);
+    } catch (error) {
+      console.error('Failed to get status:', error);
+      if (error.message.includes('fetch')) {
+        setConnectionError(true);
+      }
+    }
+  };
+
   // Poll for status updates when scraping is running
   useEffect(() => {
     let interval;
@@ -38,12 +72,12 @@ export default function ScraperPage() {
       interval = setInterval(getStatus, 2000);
     }
     return () => clearInterval(interval);
-  }, [isRunning, getStatus]); // <-- Add getStatus here
+  }, [isRunning, getStatus]);
 
   // Initial status check when component mounts
   useEffect(() => {
     getStatus();
-  }, [getStatus]); // <-- Add getStatus here
+  }, [getStatus]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -51,14 +85,6 @@ export default function ScraperPage() {
       ...prev,
       [name]: value
     }));
-  };
-
-  const getAuthHeader = () => {
-    const token = localStorage.getItem('adminToken');
-    return {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    };
   };
 
   const startScraping = async () => {
@@ -108,34 +134,6 @@ export default function ScraperPage() {
   const downloadExcel = () => {
     const token = localStorage.getItem('adminToken');
     window.open(`${BACKEND_API_URL}/api/scraper/download?token=${token}`, '_blank');
-  };
-
-  const getStatus = async () => {
-    try {
-      setConnectionError(false);
-      const response = await fetch(`${BACKEND_API_URL}/api/scraper/status`, {
-        headers: getAuthHeader()
-      });
-      
-      if (!response.ok) {
-        throw new Error('API not responding');
-      }
-      
-      const data = await response.json();
-      
-      setIsRunning(data.isRunning);
-      setProgress(data.progress);
-      setCurrentCategory(data.currentCategory);
-      setCurrentMovie(data.currentMovie);
-      setMovies(data.movies);
-      setErrors(data.errors);
-      setTotalMovies(data.totalMovies);
-    } catch (error) {
-      console.error('Failed to get status:', error);
-      if (error.message.includes('fetch')) {
-        setConnectionError(true);
-      }
-    }
   };
 
   const refreshStatus = () => {

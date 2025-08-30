@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { 
   Download, 
   PlayCircle, 
@@ -28,7 +28,7 @@ export default function ScraperPage() {
   });
   const [connectionError, setConnectionError] = useState(false);
 
-  // --- Move getStatus above useEffect hooks ---
+  // --- Move getStatus above useEffect hooks and wrap in useCallback ---
   const getAuthHeader = () => {
     const token = localStorage.getItem('adminToken');
     return {
@@ -37,7 +37,7 @@ export default function ScraperPage() {
     };
   };
 
-  const getStatus = async () => {
+  const getStatus = useCallback(async () => {
     try {
       setConnectionError(false);
       const response = await fetch(`${BACKEND_API_URL}/api/scraper/status`, {
@@ -63,7 +63,7 @@ export default function ScraperPage() {
         setConnectionError(true);
       }
     }
-  };
+  }, [BACKEND_API_URL]); // Add any dependencies used inside getStatus
 
   // Poll for status updates when scraping is running
   useEffect(() => {
@@ -171,7 +171,7 @@ export default function ScraperPage() {
           </p>
           <ul className="list-disc pl-5 mt-2 space-y-1">
             <li>The backend server is running</li>
-            <li>You've set up the scraper routes in your server.js</li>
+            <li>You have set up the scraper routes in your server.js</li>
             <li>API endpoints are properly configured</li>
           </ul>
           <button 

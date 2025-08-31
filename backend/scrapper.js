@@ -140,7 +140,7 @@ class MovieScraper {
         };
     }
 
-    // Update the crawlDirectory method to handle the file structure correctly
+    // FIXED: Crawl directories only forward/deeper from the base URL
     async crawlDirectory(url, currentDepth = 0, maxDepth = 10) {
         // Safety check - don't go too deep
         if (currentDepth > maxDepth || !scrapingStatus.isRunning) {
@@ -164,10 +164,25 @@ class MovieScraper {
             const href = $(element).attr('href');
             if (!href) return;
             
+            // Skip parent directory links (../ or ..)
+            if (href === '../' || href === '..' || href.startsWith('../')) {
+                console.log(`Skipping parent directory link: ${href}`);
+                return;
+            }
+            
+            // Skip absolute paths that go outside our scope
+            if (href.startsWith('/')) {
+                console.log(`Skipping absolute path: ${href}`);
+                return;
+            }
+            
             const fullUrl = new URL(href, url).toString();
             
-            // Skip parent directory links
-            if (href === '../' || href === '..') return;
+            // CRITICAL: Only process URLs that are within or deeper than the base URL path
+            if (!fullUrl.startsWith(this.baseUrl)) {
+                console.log(`Skipping URL outside base path: ${fullUrl}`);
+                return;
+            }
             
             // Check if it's a directory or a file
             if (href.endsWith('/')) {
@@ -177,7 +192,7 @@ class MovieScraper {
             }
         });
         
-        // First process all directories
+        // First process all directories (only going deeper)
         for (const link of links) {
             if (link.isDirectory && scrapingStatus.isRunning) {
                 await this.crawlDirectory(link.url, currentDepth + 1, maxDepth);

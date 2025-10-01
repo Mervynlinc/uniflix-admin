@@ -8,7 +8,9 @@ import {
   Film, 
   PlusCircle,
   Download, 
-  LogOut 
+  LogOut,
+  Sparkles,
+  Library
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -19,8 +21,10 @@ export default function Sidebar() {
   const navigation = [
     { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
     { name: 'Add Movies', href: '/movies', icon: PlusCircle },
+    { name: 'Add Series', href: '/series', icon: PlusCircle },
     { name: 'Scraper', href: '/scraper', icon: Download },
-  ];
+    { name: 'Re-Enrich Content', href: '/re-enrich', icon: Sparkles },
+    { name: 'Series Manager', href: '/series-manager', icon: Library },  ];
   
   const handleLogout = () => {
     localStorage.removeItem('adminToken');

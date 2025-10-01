@@ -56,7 +56,7 @@ async function main(filePath) {
                 // Insert into Supabase (fix table name)
                 const { data, error } = await supabase
                     .from('Movies') // Changed from 'movies' to 'Movies'
-                    .insert([movieData])
+                    .insert
                     .select();
 
                 if (error) {

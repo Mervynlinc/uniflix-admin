@@ -8,12 +8,17 @@ import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { main, enrichMoviesByIds } from './enrichMovies.js';
+import { importAndEnrichSeries } from './enrichSeries.js';
 import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
 import { parse } from 'url';
 import { setupScraperRoutes } from './scrapper.js';
 import multer from 'multer';
 import XLSX from 'xlsx';
+import path, { dirname } from 'path';
+import { fileURLToPath } from 'url';
+import fs from 'fs';
+import { mkdirSync, existsSync } from 'fs';
 
 // Initialize environment variables
 dotenv.config();
@@ -21,6 +26,9 @@ dotenv.config();
 // Create Express app
 const app = express();
 const PORT = process.env.PORT || 4000;
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Security middleware
 app.use(helmet());
@@ -565,4 +573,445 @@ app.post('/upload-excel', upload.single('excelFile'), async (req, res) => {
         console.error('File upload error:', error);
         res.status(500).json({ error: 'Internal server error' });
     }
+});
+
+// Series import endpoint
+app.post('/api/series/import', authenticateToken, upload.single('seriesFile'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ success: false, message: 'No file uploaded' });
+  }
+
+  try {
+    console.log(`Series file uploaded: ${req.file.originalname}`);
+    const trackProgress = req.body.trackProgress === 'true';
+    
+    // Send initial progress
+    if (trackProgress) {
+      broadcastProgress('upload_progress', 0, { contentType: 'series' });
+    }
+    
+    // Process the uploaded Excel file with series data
+    const result = await importAndEnrichSeries(req.file.path);
+    
+    // Extract the series IDs from the database
+    const { data: seriesArray, error: fetchError } = await supabase
+      .from('Serie')
+      .select('serie_id, serie_title')
+      .order('serie_title', { ascending: true })
+      .limit(100);  // Limit to reasonable number
+      
+    if (fetchError) {
+      throw new Error(`Failed to fetch series: ${fetchError.message}`);
+    }
+    
+    // Send final progress
+    if (trackProgress) {
+      broadcastProgress('upload_progress', 100, { 
+        status: 'success', 
+        contentType: 'series' 
+      });
+    }
+    
+    // Return a response structure that matches what the frontend expects
+    res.json({
+      success: true,
+      message: `Successfully processed ${result.series} series with ${result.seasons} seasons and ${result.episodes} episodes.`,
+      addedSeries: seriesArray || [], // This is what the frontend expects
+      series: result.series,
+      seasons: result.seasons,
+      episodes: result.episodes
+    });
+    
+  } catch (error) {
+    console.error('Series import error:', error);
+    
+    // Send error progress
+    if (req.body.trackProgress === 'true') {
+      broadcastProgress('upload_progress', 0, { 
+        status: 'error',
+        contentType: 'series',
+        message: 'Series import failed: ' + error.message 
+      });
+    }
+    
+    res.status(500).json({ 
+      success: false, 
+      message: 'Series import failed', 
+      error: error.message,
+      addedSeries: [] // Include empty array for error cases
+    });
+  }
+});
+
+
+
+// Series bulk enrichment endpoint (for processing series that were imported separately)
+app.post('/api/series/enrich', authenticateToken, async (req, res) => {
+  const { seriesIds, trackProgress } = req.body;
+  
+  if (!Array.isArray(seriesIds) || seriesIds.length === 0) {
+    return res.status(400).json({ message: 'No series IDs provided' });
+  }
+  
+  try {
+    // Send initial progress
+    if (trackProgress) {
+      broadcastProgress('enrich_progress', 0, { contentType: 'series' });
+    }
+    
+    console.log(`Starting enrichment for ${seriesIds.length} series`);
+    
+    // Fetch series data
+    const { data: seriesList, error: fetchError } = await supabase
+      .from('Serie')
+      .select('serie_id, serie_title, release_year')
+      .in('serie_id', seriesIds);
+      
+    if (fetchError) {
+      throw new Error(`Failed to fetch series: ${fetchError.message}`);
+    }
+    
+    const totalSeries = seriesList.length;
+    let processedCount = 0;
+    let successCount = 0;
+    let failedCount = 0;
+    const results = [];
+    
+    // Process each series
+    for (const series of seriesList) {
+      try {
+        // Send progress update
+        if (trackProgress) {
+          const progress = Math.round((processedCount / totalSeries) * 100);
+          broadcastProgress('enrich_progress', progress, {
+            contentType: 'series',
+            currentItem: series.serie_title
+          });
+        }
+        
+        // Create a temporary Excel file with just this series
+        const tempDir = path.join(__dirname, 'temp');
+        if (!fs.existsSync(tempDir)) {
+          fs
+        }
+        
+        const tempFilePath = path.join(tempDir, `series_${series.serie_id}_${Date.now()}.xlsx`);
+        
+        // Create a workbook with the series data
+        const wb = XLSX.utils.book_new();
+        const seriesSheet = XLSX.utils.json_to_sheet([{
+          serie_id: series.serie_id,
+          serie_title: series.serie_title,
+          release_year: series.release_year
+        }]);
+        XLSX.utils.book_append_sheet(wb, seriesSheet, 'Serie');
+        XLSX.writeFile(wb, tempFilePath);
+        
+        // Enrich this series
+        await importAndEnrichSeries(tempFilePath);
+        
+        // Clean up temp file
+        try {
+          fs.unlinkSync(tempFilePath);
+        } catch (cleanupError) {
+          console.warn(`Failed to clean up temp file: ${cleanupError.message}`);
+        }
+        
+        results.push({
+          serie_id: series.serie_id,
+          serie_title: series.serie_title,
+          status: 'success'
+        });
+        
+        successCount++;
+      } catch (err) {
+        console.error(`Error enriching series ${series.serie_title}:`, err);
+        failedCount++;
+        results.push({
+          serie_id: series.serie_id,
+          serie_title: series.serie_title,
+          status: 'failed',
+          error: err.message
+        });
+      }
+      
+      processedCount++;
+    }
+    
+    // Send completion progress
+    if (trackProgress) {
+      broadcastProgress('enrich_progress', 100, { 
+        status: failedCount === 0 ? 'success' : 'partial',
+        contentType: 'series',
+        notifyUser: true,
+        title: 'Series Enrichment Complete',
+        message: `Successfully enriched ${successCount} series, ${failedCount} failed.`
+      });
+    }
+    
+    res.json({
+      success: successCount,
+      failed: failedCount,
+      total: totalSeries,
+      results
+    });
+    
+  } catch (error) {
+    console.error('Series enrichment error:', error);
+    
+    // Send error progress
+    if (trackProgress) {
+      broadcastProgress('enrich_progress', 0, { 
+        status: 'error',
+        contentType: 'series',
+        notifyUser: true,
+        title: 'Series Enrichment Failed',
+        message: 'Process failed: ' + error.message 
+      });
+    }
+    
+    res.status(500).json({ message: 'Series enrichment failed', error: error.message });
+  }
+});
+
+// Find movies with missing important data
+app.get('/api/movies/missing-data', authenticateToken, async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('Movies')
+      .select('movie_id, movie_title, release_year, image_url, plot, release_date, rating, duration, trailer, tmdb_id')
+      .or('image_url.is.null,plot.is.null,tmdb_id.is.null,trailer.is.null,rating.is.null')
+      .order('movie_title');
+      
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    console.error('Error fetching movies with missing data:', err);
+    res.status(500).json({ message: 'Failed to fetch movies', error: err.message });
+  }
+});
+
+// Find series with missing important data
+app.get('/api/series/missing-data', authenticateToken, async (req, res) => {
+  try {
+    // Get series with missing metadata
+    const { data, error } = await supabase
+      .from('Serie')
+      .select('serie_id, serie_title, release_year, image_url, description, rating, trailer, tmdb_id')
+      .or('image_url.is.null,description.is.null,tmdb_id.is.null,trailer.is.null')
+      .order('serie_title');
+      
+    if (error) throw error;
+    
+    // For each series, also check if it's missing seasons or episodes
+    for (const series of data) {
+      series.missing = [];
+      
+      // Check if series has seasons
+      const { count: seasonCount } = await supabase
+        .from('Season')
+        .select('*', { count: 'exact', head: true })
+        .eq('serie_id', series.serie_id);
+      
+      if (seasonCount === 0) {
+        series.missing.push('seasons');
+      } else {
+        // Check if seasons have episodes
+        const { count: episodeCount } = await supabase
+          .from('Episodes')
+          .select('*', { count: 'exact', head: true })
+          .eq('serie_id', series.serie_id);
+        
+        if (episodeCount === 0) {
+          series.missing.push('episodes');
+        }
+      }
+    }
+    
+    res.json(data);
+  } catch (err) {
+    console.error('Error fetching series with missing data:', err);
+    res.status(500).json({ message: 'Failed to fetch series', error: err.message });
+  }
+});
+
+async function enrichSeriesById(seriesIds, trackProgress = false) {
+  // Create temp directory if it doesn't exist
+  const tempDir = path.join(__dirname, 'temp');
+  if (!existsSync(tempDir)) {
+    try {
+      console.log(`Creating temp directory at: ${tempDir}`);
+      fs.mkdirSync(tempDir, { recursive: true });
+    } catch (error) {
+      console.error(`Failed to create temp directory: ${error.message}`);
+      throw new Error(`Unable to create temp directory: ${error.message}`);
+    }
+  }
+  
+  // Rest of your function...
+}
+
+// Delete a series and all its associated data
+app.delete('/api/series/:id', authenticateToken, async (req, res) => {
+  const serieId = req.params.id;
+  
+  try {
+    console.log(`Deleting series ID ${serieId} and all related data`);
+    
+    // 1. Delete all episodes associated with this series
+    const { error: episodesError } = await supabase
+      .from('Episodes')
+      .delete()
+      .eq('serie_id', serieId);
+    
+    if (episodesError) throw episodesError;
+    
+    // 2. Delete all seasons associated with this series
+    const { error: seasonsError } = await supabase
+      .from('Season')
+      .delete()
+      .eq('serie_id', serieId);
+    
+    if (seasonsError) throw seasonsError;
+    
+    // 3. Delete genre relationships
+    const { error: genresError } = await supabase
+      .from('SeriesGenres')
+      .delete()
+      .eq('serie_id', serieId);
+    
+    if (genresError) throw genresError;
+    
+    // 4. Finally delete the series itself
+    const { error: serieError } = await supabase
+      .from('Serie')
+      .delete()
+      .eq('serie_id', serieId);
+    
+    if (serieError) throw serieError;
+    
+    res.json({ 
+      success: true, 
+      message: `Series ID ${serieId} and all related data successfully deleted` 
+    });
+  } catch (err) {
+    console.error(`Error deleting series ${serieId}:`, err);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to delete series', 
+      error: err.message 
+    });
+  }
+});
+
+// Delete specific episodes
+app.delete('/api/episodes', authenticateToken, async (req, res) => {
+  const { episodeIds } = req.body;
+  
+  if (!Array.isArray(episodeIds) || episodeIds.length === 0) {
+    return res.status(400).json({ message: 'No episode IDs provided' });
+  }
+  
+  try {
+    console.log(`Deleting ${episodeIds.length} episodes`);
+    
+    // Delete the specified episodes
+    const { error } = await supabase
+      .from('Episodes')
+      .delete()
+      .in('episode_id', episodeIds);
+    
+    if (error) throw error;
+    
+    res.json({ 
+      success: true, 
+      message: `Successfully deleted ${episodeIds.length} episodes` 
+    });
+  } catch (err) {
+    console.error('Error deleting episodes:', err);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to delete episodes', 
+      error: err.message 
+    });
+  }
+});
+
+// Get all series
+app.get('/api/series', authenticateToken, async (req, res) => {
+  try {
+    console.log('Fetching all series for Series Manager');
+    const { data, error } = await supabase
+      .from('Serie')
+      .select('*')
+      .order('serie_title');
+      
+    if (error) {
+      console.error('Error fetching series:', error);
+      throw error;
+    }
+    
+    console.log(`Returning ${data?.length || 0} series`);
+    res.json(data || []);
+  } catch (err) {
+    console.error('Error in GET /api/series endpoint:', err);
+    res.status(500).json({ message: 'Failed to fetch series', error: err.message });
+  }
+});
+
+// Get series details with seasons and episodes for management
+app.get('/api/series/:id/details', authenticateToken, async (req, res) => {
+  try {
+    const serieId = req.params.id;
+    
+    // Get series data
+    const { data: serie, error: serieError } = await supabase
+      .from('Serie')
+      .select('*')
+      .eq('serie_id', serieId)
+      .single();
+      
+    if (serieError) throw serieError;
+    
+    // Get seasons for this series
+    const { data: seasons, error: seasonsError } = await supabase
+      .from('Season')
+      .select('*')
+      .eq('serie_id', serieId)
+      .order('season_number');
+      
+    if (seasonsError) throw seasonsError;
+    
+    // Get episodes for this series
+    const { data: episodes, error: episodesError } = await supabase
+      .from('Episodes')
+      .select('*')
+      .eq('serie_id', serieId)
+      .order('season_id, episode_number');
+      
+    if (episodesError) throw episodesError;
+    
+    // Organize episodes by season
+    const seasonMap = {};
+    seasons.forEach(season => {
+      seasonMap[season.season_id] = {
+        ...season,
+        episodes: []
+      };
+    });
+    
+    episodes.forEach(episode => {
+      if (seasonMap[episode.season_id]) {
+        seasonMap[episode.season_id].episodes.push(episode);
+      }
+    });
+    
+    res.json({
+      serie,
+      seasons: Object.values(seasonMap)
+    });
+  } catch (err) {
+    console.error('Error fetching series details:', err);
+    res.status(500).json({ message: 'Failed to fetch series details', error: err.message });
+  }
 });

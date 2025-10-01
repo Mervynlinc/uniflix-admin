@@ -167,8 +167,7 @@ export default function SeriesManagerPage() {
           <DialogHeader>
             <DialogTitle className="text-red-400">Delete Series</DialogTitle>
             <DialogDescription className="text-gray-400">
-              Are you sure you want to delete "{confirmDelete?.serie_title}"?
-              This will permanently remove all seasons, episodes, and associated data.
+              Are you sure you want to delete &quot;{confirmDelete?.serie_title}&quot;? This will permanently remove all seasons, episodes, and associated data.
             </DialogDescription>
           </DialogHeader>
           

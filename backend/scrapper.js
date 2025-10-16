@@ -529,10 +529,10 @@ class EnhancedScraper {
                     download_count: '0'
                 };
                 
-                // FIX: Add to only ONE array, not both
+                // Add to both arrays
                 this.series.push(episodeData);
-                // REMOVE THIS LINE: scrapingStatus.series.push(episodeData);
-                
+                scrapingStatus.series.push(episodeData); // ADD THIS LINE BACK
+
                 this.processedVideoFiles++;
                 scrapingStatus.processedItems = this.processedVideoFiles;
                 scrapingStatus.totalItems = this.processedVideoFiles;
@@ -867,9 +867,11 @@ class EnhancedScraper {
 // Create scraper instance
 const scraper = new EnhancedScraper();
 
-// Function to verify JWT token from query parameter
+// Function to verify JWT token from query parameter or Authorization header
 const verifyTokenFromQuery = (req, res, next) => {
-    const token = req.query.token;
+    const token = req.query.token || 
+                 (req.headers.authorization && req.headers.authorization.startsWith('Bearer ') ? 
+                  req.headers.authorization.split(' ')[1] : null);
 
     if (!token) {
         return res.status(401).json({ message: 'Authentication required' });

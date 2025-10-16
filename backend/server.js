@@ -1,4 +1,6 @@
 import express from 'express';
+import http from 'http';
+import https from 'https';
 import cors from 'cors';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
@@ -692,7 +694,7 @@ app.post('/api/series/enrich', authenticateToken, async (req, res) => {
         // Create a temporary Excel file with just this series
         const tempDir = path.join(__dirname, 'temp');
         if (!fs.existsSync(tempDir)) {
-          fs
+          fs.mkdirSync(tempDir, { recursive: true });
         }
         
         const tempFilePath = path.join(tempDir, `series_${series.serie_id}_${Date.now()}.xlsx`);
@@ -780,7 +782,7 @@ app.get('/api/movies/missing-data', authenticateToken, async (req, res) => {
     const { data, error } = await supabase
       .from('Movies')
       .select('movie_id, movie_title, release_year, image_url, plot, release_date, rating, duration, trailer, tmdb_id')
-      .or('image_url.is.null,plot.is.null,tmdb_id.is.null,trailer.is.null,rating.is.null')
+      .or('image_url.is.null,plot.is.null,trailer.is.null,rating.is.null')
       .order('movie_title');
       
     if (error) throw error;
@@ -798,7 +800,7 @@ app.get('/api/series/missing-data', authenticateToken, async (req, res) => {
     const { data, error } = await supabase
       .from('Serie')
       .select('serie_id, serie_title, release_year, image_url, description, rating, trailer, tmdb_id')
-      .or('image_url.is.null,description.is.null,tmdb_id.is.null,trailer.is.null')
+      .or('image_url.is.null,description.is.null,tmdb_id.is.null,trailer.is.null') // Fixed unclosed string
       .order('serie_title');
       
     if (error) throw error;
@@ -841,7 +843,7 @@ async function enrichSeriesById(seriesIds, trackProgress = false) {
   if (!existsSync(tempDir)) {
     try {
       console.log(`Creating temp directory at: ${tempDir}`);
-      fs.mkdirSync(tempDir, { recursive: true });
+      fs.mkdirSync(tempDir, { recursive: true }); // Fixed missing mkdirSync call
     } catch (error) {
       console.error(`Failed to create temp directory: ${error.message}`);
       throw new Error(`Unable to create temp directory: ${error.message}`);
@@ -1015,3 +1017,15 @@ app.get('/api/series/:id/details', authenticateToken, async (req, res) => {
     res.status(500).json({ message: 'Failed to fetch series details', error: err.message });
   }
 });
+
+// Add this near where you define other server routes
+
+// Add aliases for server endpoints (without /api prefix)
+app.use('/servers', (req, res, next) => {
+  req.url = `/api${req.url}`;
+  next();
+});
+
+// ============================================
+// SERVER MANAGEMENT ENDPOINTS
+// ============================================

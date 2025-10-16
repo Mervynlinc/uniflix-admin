@@ -114,6 +114,29 @@ CREATE TABLE public.SeriesGenres (
   CONSTRAINT SeriesGenres_serie_id_fkey FOREIGN KEY (serie_id) REFERENCES public.Serie(serie_id),
   CONSTRAINT SeriesGenres_genre_id_fkey FOREIGN KEY (genre_id) REFERENCES public.Genre(genre_id)
 );
+CREATE TABLE public.ServerCheckLogs (
+  log_id integer NOT NULL DEFAULT nextval('serverchecklogs_log_id_seq'::regclass),
+  server_id integer,
+  status character varying,
+  response_time integer,
+  error_message text,
+  checked_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT ServerCheckLogs_pkey PRIMARY KEY (log_id),
+  CONSTRAINT ServerCheckLogs_server_id_fkey FOREIGN KEY (server_id) REFERENCES public.Servers(server_id)
+);
+CREATE TABLE public.Servers (
+  server_id integer NOT NULL DEFAULT nextval('servers_server_id_seq'::regclass),
+  server_name character varying NOT NULL,
+  server_url character varying NOT NULL UNIQUE,
+  status character varying DEFAULT 'unknown'::character varying CHECK (status::text = ANY (ARRAY['online'::character varying, 'offline'::character varying, 'unknown'::character varying, 'checking'::character varying]::text[])),
+  is_visible boolean DEFAULT true,
+  last_checked timestamp with time zone,
+  response_time integer,
+  failure_count integer DEFAULT 0,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT Servers_pkey PRIMARY KEY (server_id)
+);
 CREATE TABLE public.Types (
   type_id integer NOT NULL DEFAULT nextval('"Types_type_id_seq"'::regclass),
   type character varying NOT NULL,

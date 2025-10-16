@@ -10,7 +10,8 @@ import {
   Download, 
   LogOut,
   Sparkles,
-  Library
+  Library,
+  Server
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -24,6 +25,7 @@ export default function Sidebar() {
     { name: 'Add Series', href: '/series', icon: PlusCircle },
     { name: 'Scraper', href: '/scraper', icon: Download },
     { name: 'Re-Enrich Content', href: '/re-enrich', icon: Sparkles },
+    { name: 'Servers', href: '/server', icon: Server },
     { name: 'Series Manager', href: '/series-manager', icon: Library },  ];
   
   const handleLogout = () => {
